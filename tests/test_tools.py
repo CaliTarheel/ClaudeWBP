@@ -222,3 +222,65 @@ def test_pipeline_reorient_is_a_rotation():
     out = reorient(body, "zxy")
     assert out.volume == pytest.approx(body.volume, rel=1e-9)
     assert out.total_area == pytest.approx(body.total_area, rel=1e-9)
+
+
+def test_check_mesh_passes_a_clean_body(tmp_path, capsys):
+    from check_mesh import check
+    from echo1.meshio import save_obj
+
+    path = tmp_path / "clean.obj"
+    save_obj(shapes.faceted_delta(), path)
+    assert check(path, 10e9) is True
+    out = capsys.readouterr().out
+    assert "closed body" in out
+    assert "FATAL" not in out
+
+
+def test_check_mesh_rejects_non_manifold(tmp_path, capsys):
+    from check_mesh import check
+
+    # Three triangles sharing one edge.
+    with open(tmp_path / "bad.obj", "w") as fh:
+        for v in ((0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1), (1, 1, 1)):
+            fh.write(f"v {v[0]} {v[1]} {v[2]}\n")
+        fh.write("f 1 2 3\nf 1 2 4\nf 1 2 5\n")
+    assert check(tmp_path / "bad.obj", 10e9) is False
+    assert "non-manifold" in capsys.readouterr().out
+
+
+def test_check_mesh_rejects_zero_area(tmp_path, capsys):
+    from check_mesh import check
+
+    with open(tmp_path / "degen.obj", "w") as fh:
+        for v in ((0, 0, 0), (1, 0, 0), (2, 0, 0)):
+            fh.write(f"v {v[0]} {v[1]} {v[2]}\n")
+        fh.write("f 1 2 3\n")
+    assert check(tmp_path / "degen.obj", 10e9) is False
+    assert "zero-area" in capsys.readouterr().out
+
+
+def test_check_mesh_flags_inward_normals(tmp_path, capsys):
+    from check_mesh import check
+    from echo1.meshio import save_obj
+
+    save_obj(shapes.box(2.0, 1.0, 1.0).flipped(), tmp_path / "inside-out.obj")
+    check(tmp_path / "inside-out.obj", 10e9)
+    assert "normals point inward" in capsys.readouterr().out
+
+
+def test_check_mesh_flags_an_open_boundary(tmp_path, capsys):
+    from check_mesh import check
+    from echo1.meshio import save_obj
+
+    save_obj(shapes.plate(1.0, 1.0), tmp_path / "sheet.obj")
+    check(tmp_path / "sheet.obj", 10e9)
+    assert "open boundary" in capsys.readouterr().out
+
+
+def test_check_mesh_symmetry_metric():
+    from check_mesh import _symmetry
+
+    assert _symmetry(shapes.faceted_delta()) == pytest.approx(1.0)
+    lop = shapes.box(4.0, 2.0, 1.0) + shapes.box(1.4, 1.4, 1.4).translated(
+        [1.0, 1.7, 0.4])
+    assert _symmetry(lop) < 0.95

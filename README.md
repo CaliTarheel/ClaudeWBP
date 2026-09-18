@@ -110,7 +110,20 @@ python examples/cad_signature.py meshes/jet.obj --freq 10GHz --axes zxy
 `step_to_mesh.py` keeps each solid separate, welds the sliver triangles CAD
 tessellation leaves behind, and reports whether each solid came out closed.
 `cad_signature.py` reorients the model into echo1's frame and writes the
-signature, a cut and a geometry render.
+signature, a cut and a geometry render. `pipeline.py` runs the whole chain --
+tessellate, reorient, symmetrize, cant, planform-sweep, sweep -- in one command.
+
+Check a mesh before spending an hour sweeping it:
+
+```
+python tools/check_mesh.py model.obj --freq 10GHz
+```
+
+It separates what echo1 will refuse outright (non-manifold edges, zero-area
+facets) from what it will accept but answer wrongly about (inward normals,
+open boundaries, unmodelled dihedral corners) from what is merely worth
+knowing (asymmetry, sub-wavelength detail), and names the modelling-package
+operation that fixes each.
 
 ```
 echo1 shapes                                  # the built-in bodies
