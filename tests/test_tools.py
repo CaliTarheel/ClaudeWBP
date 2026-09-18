@@ -89,3 +89,56 @@ def test_cant_reduces_the_horizon_flash():
     before = monostatic_rcs(box, 10e9, az, 0.0, pols=("VV",)).sigma["VV"]
     after = monostatic_rcs(canted, 10e9, az, 0.0, pols=("VV",)).sigma["VV"]
     assert after.max() < before.max() * 1e-2   # at least 20 dB off the peak
+
+
+def test_panel_groups_require_connection():
+    """Two coplanar faces that do not touch are two panels, not one.
+
+    Keying on the plane alone would let a 'panel' span the whole body while
+    carrying almost no area, and rotating it about its centroid would move
+    metal by metres.
+    """
+    from cant_panels import panel_groups
+
+    pair = shapes.box(1.0, 1.0, 1.0) + shapes.box(1.0, 1.0, 1.0).translated(
+        [3.0, 0.0, 0.0])
+    group = panel_groups(pair)
+    top = np.flatnonzero(np.isclose(pair.face_normals[:, 2], 1.0))
+    assert len(top) >= 2
+    left = pair.face_centroids[top, 0] < 1.5
+    assert len(np.unique(group[top[left]])) == 1
+    assert len(np.unique(group[top[~left]])) == 1
+    assert group[top[left]][0] != group[top[~left]][0]
+
+
+def test_sweep_turns_forward_faces_to_the_planform_angle():
+    from cant_panels import axis_census, sweep_to_planform
+
+    box = shapes.box(3.0, 2.0, 1.0)
+    before = axis_census(box)
+    out, moved, n_moved = sweep_to_planform(box, threshold_deg=20.0,
+                                            target_az_deg=36.5)
+    after = axis_census(out)
+    assert moved and n_moved > 0
+    assert after[5.0][1] < 0.05 * before[5.0][1]
+    assert out.n_faces == box.n_faces
+    assert out.volume > 0
+
+
+def test_sweep_leaves_an_aligned_body_alone():
+    from cant_panels import sweep_to_planform
+
+    body = shapes.faceted_delta()          # nothing faces straight down +x
+    out, moved, n_moved = sweep_to_planform(body, threshold_deg=20.0)
+    assert not moved and n_moved == 0
+    assert np.allclose(out.vertices, body.vertices)
+
+
+def test_sweep_moves_little_metal():
+    """The point is a re-cut panel, not a redesigned airframe."""
+    from cant_panels import sweep_to_planform
+
+    box = shapes.box(3.0, 2.0, 1.0)
+    out, _, _ = sweep_to_planform(box, threshold_deg=20.0, target_az_deg=36.5)
+    moved = np.linalg.norm(out.vertices - box.vertices, axis=1)
+    assert moved.max() < 0.5 * box.max_dimension
