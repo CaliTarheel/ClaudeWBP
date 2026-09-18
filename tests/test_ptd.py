@@ -39,7 +39,15 @@ def test_edge_machinery_reproduces_exact_po_on_a_rectangle(a, b):
     the sign, the obliquity power or the azimuth convention shows up at once.
     """
     plate = rect_plate(a, b)
-    d = directions(80, seed=11)
+    # The identity is a formal property of the edge kernel; sample away from
+    # the end-on caustic, where the kernel is deliberately tapered off.
+    d = directions(400, seed=11)
+    e_hat = plate.edges.e_hat
+    sin_beta = np.linalg.norm(
+        d[:, None, :] - np.einsum("ak,ek->ae", d, e_hat)[..., None] * e_hat[None],
+        axis=2)
+    d = d[sin_beta.min(axis=1) > 0.3][:80]
+    assert len(d) > 20
     h, v = pol_frame(d)
     for e in (h, v):
         po = po_amplitude(plate, -d, d, e, e, K,
@@ -184,3 +192,28 @@ def test_dihedral_corners_are_reported():
     from echo1.solver import dihedral_corners
     count, length = dihedral_corners(dihedral())
     assert count >= 1 and length > 0.0
+
+
+def test_end_on_edges_do_not_diverge():
+    """Looking along an edge is a caustic: the equivalent-current amplitude
+    carries 1/sin^2(beta0) and would otherwise grow without bound."""
+    from echo1.geometry import EdgeSet
+    from echo1.ptd import ptd_amplitude
+
+    e = EdgeSet(
+        p0=np.array([[0.0, 0.0, -0.01]]), p1=np.array([[0.0, 0.0, 0.01]]),
+        e_hat=np.array([[0.0, 0.0, 1.0]]), length=np.array([0.02]),
+        x_hat=np.array([[1.0, 0.0, 0.0]]), y_hat=np.array([[0.0, 1.0, 0.0]]),
+        wedge_n=np.array([0.75]), faces=np.array([[0, 1]]), n_adjacent=np.array([2]),
+    )
+    # Swing the line of sight from broadside onto the edge.
+    tilt = np.radians(np.array([90.0, 60.0, 30.0, 10.0, 3.0, 1.0, 0.1]))
+    d = np.stack([np.sin(tilt), np.zeros_like(tilt), np.cos(tilt)], axis=1)
+    pol = np.tile(np.array([0.0, 1.0, 0.0]), (len(d), 1))
+    amp = np.abs(ptd_amplitude(e, -d, d, pol, pol, 2 * np.pi / 0.03,
+                               np.ones((len(d), 1), bool))[:, 0])
+    assert np.all(np.isfinite(amp))
+    # Broadside is the largest; end-on is switched off entirely.
+    assert amp[0] == amp.max()
+    assert amp[-1] == 0.0
+    assert amp.max() < 5.0 * e.length[0] * 2 * np.pi / 0.03

@@ -57,8 +57,18 @@ __all__ = ["fringe_coefficients", "po_edge_coefficients", "ptd_amplitude", "diff
 # the (finite) fringe coefficient is recovered by a symmetric average.
 _SING_TOL = 1e-6
 _SING_DELTA = 1e-4
-# Floor on sin(beta0); grazing-along-the-edge is a caustic of this theory.
+# Looking along an edge is a caustic of this theory.  The equivalent-edge-
+# current amplitude carries 1 / sin^2(beta0), where beta0 is the angle between
+# the edge and the line of sight, so as the line of sight swings onto the edge
+# the formulation does not merely lose accuracy, it diverges -- a 17 mm edge on
+# a real airframe was found radiating like two square metres.  Near end-on
+# there is no edge wave to speak of anyway: the edge presents almost no
+# projected length, and what is left is a tip effect this model does not carry.
+# So the contribution is tapered smoothly to zero below _SIN_BETA_TAPER, which
+# also caps the amplification at 1 / _SIN_BETA_FULL^2.
 _SIN_BETA_FLOOR = 1e-3
+_SIN_BETA_TAPER = 0.10
+_SIN_BETA_FULL = 0.25
 # Smallest exterior wedge angle (in units of pi) this model will diffract from.
 # A re-entrant corner is a multiple-bounce geometry, and single diffraction has
 # less and less to say about it as the corner sharpens.  The right-angle
@@ -264,7 +274,11 @@ def ptd_amplitude(
     s_cross_e = np.cross(s_hat[:, None, :], e_hat[None, :, :])   # (A, E, 3)
     er_dot_sxe = np.einsum("ak,aek->ae", e_rec, s_cross_e)
 
-    coeff = (-1.0j / k) / sin_beta**2
+    # Fade out the end-on caustic (see _SIN_BETA_TAPER).
+    ramp = np.clip((sin_beta - _SIN_BETA_TAPER) / (_SIN_BETA_FULL - _SIN_BETA_TAPER),
+                   0.0, 1.0)
+    taper = ramp * ramp * (3.0 - 2.0 * ramp)
+    coeff = (-1.0j / k) * taper / sin_beta**2
     vec = coeff * (-e_dot_ei * e_dot_er * f + e_dot_hi * er_dot_sxe * g)
 
     # Line integral of exp(j w . r) along each straight edge.
