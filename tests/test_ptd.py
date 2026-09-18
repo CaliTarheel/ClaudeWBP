@@ -105,3 +105,50 @@ def test_po_edge_coefficients_lit_face_selection():
     f_bot, _ = po_edge_coefficients(phi, np.array([4.0, 4.0]), np.array([2.0, 2.0]))
     assert np.all(np.isfinite(f_top)) and np.all(np.isfinite(f_bot))
     assert not np.allclose(f_top, f_bot)
+
+
+def test_reentrant_wedges_are_excluded():
+    """A strongly re-entrant corner is outside single-bounce PTD, and the
+    Keller coefficient grows without physical meaning there, so such edges
+    must not be allowed into the sum."""
+    from echo1.geometry import Mesh
+    from echo1.ptd import diffracting
+
+    # A narrow V: two plates meeting at a small exterior angle.
+    half = np.radians(20.0)
+    v = np.array([
+        [0.0, -0.5, 0.0], [0.0, 0.5, 0.0],
+        [np.cos(half), -0.5, np.sin(half)], [np.cos(half), 0.5, np.sin(half)],
+        [np.cos(half), -0.5, -np.sin(half)], [np.cos(half), 0.5, -np.sin(half)],
+    ])
+    m = Mesh(v, np.array([[0, 1, 3], [0, 3, 2], [0, 4, 5], [0, 5, 1]]),
+             two_sided=True)
+    shared = m.edges.wedge_n < 0.5
+    assert shared.any(), "expected a re-entrant edge in this geometry"
+    assert not diffracting(m.edges)[shared].any()
+
+
+def test_excluded_edges_are_reported():
+    """Dropping geometry silently would be worse than not dropping it."""
+    from echo1.geometry import Mesh
+
+    half = np.radians(20.0)
+    v = np.array([
+        [0.0, -0.5, 0.0], [0.0, 0.5, 0.0],
+        [np.cos(half), -0.5, np.sin(half)], [np.cos(half), 0.5, np.sin(half)],
+        [np.cos(half), -0.5, -np.sin(half)], [np.cos(half), 0.5, -np.sin(half)],
+    ])
+    m = Mesh(v, np.array([[0, 1, 3], [0, 3, 2], [0, 4, 5], [0, 5, 1]]),
+             two_sided=True)
+    got = monostatic_rcs(m, FREQ, np.arange(0, 360, 45.0), pols=("VV",))
+    count, length = got.excluded_edges
+    assert count >= 1 and length > 0.0
+
+
+def test_min_wedge_n_is_tunable():
+    from echo1.geometry import Mesh
+    from echo1.ptd import diffracting
+
+    m = rect_plate(0.3, 0.2)
+    assert diffracting(m.edges, min_wedge_n=0.5).sum() == 4      # the four rim edges
+    assert diffracting(m.edges, min_wedge_n=2.5).sum() == 0

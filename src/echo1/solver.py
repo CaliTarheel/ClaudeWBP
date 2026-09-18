@@ -34,7 +34,7 @@ import numpy as np
 from .analytic import C0, to_dbsm
 from .geometry import Mesh, normalize
 from .po import po_amplitude
-from .ptd import ptd_amplitude
+from .ptd import _MIN_WEDGE_N, diffracting, ptd_amplitude
 from .shadow import edge_illumination, facet_illumination
 
 __all__ = ["RcsResult", "look_vectors", "monostatic_rcs", "bistatic_rcs"]
@@ -72,6 +72,9 @@ class RcsResult:
     sigma_ptd: Dict[str, np.ndarray] = field(default_factory=dict)
     mesh_name: str = "mesh"
     bistatic: bool = False
+    #: ``(count, length)`` of edges dropped for having too sharp a re-entrant
+    #: wedge for single-bounce PTD.  Non-zero means some geometry was ignored.
+    excluded_edges: tuple = (0, 0.0)
 
     @property
     def wavelength(self) -> float:
@@ -131,6 +134,7 @@ def _sweep(
     use_ptd: bool,
     occlusion: bool,
     chunk: int,
+    min_wedge_n: float,
 ):
     """Shared core for monostatic and bistatic sweeps."""
     k = 2.0 * np.pi * freq_hz / C0
@@ -165,12 +169,20 @@ def _sweep(
                 amp = amp + a_po
             if use_ptd and len(mesh.edges):
                 a_pt = ptd_amplitude(
-                    mesh.edges, i_hat, s_hat, e_inc, e_rec, k, act
+                    mesh.edges, i_hat, s_hat, e_inc, e_rec, k, act,
+                    min_wedge_n=min_wedge_n,
                 ).sum(axis=1)
                 sig_pt[p][sl] = np.abs(a_pt) ** 2
                 amp = amp + a_pt
             sig[p][sl] = np.abs(amp) ** 2
     return sig, sig_po, sig_pt
+
+
+def _edge_census(mesh: Mesh, min_wedge_n: float):
+    """How much edge length was dropped as too re-entrant to model."""
+    edges = mesh.edges
+    dropped = (edges.wedge_n < min_wedge_n)
+    return int(dropped.sum()), float(edges.length[dropped].sum())
 
 
 def _frame(r):
@@ -193,6 +205,7 @@ def monostatic_rcs(
     use_ptd: bool = True,
     occlusion: bool = True,
     chunk: int = 64,
+    min_wedge_n: float = _MIN_WEDGE_N,
 ) -> RcsResult:
     """Backscatter RCS of ``mesh`` over a sweep of look directions.
 
@@ -216,6 +229,10 @@ def monostatic_rcs(
         where facet orientation alone is exact, and much faster.
     chunk : int
         Look directions processed per batch (memory/speed trade-off).
+    min_wedge_n : float
+        Smallest exterior wedge angle, in units of pi, that is allowed to
+        diffract.  See :data:`echo1.ptd._MIN_WEDGE_N`; the returned result
+        records what this excluded in ``excluded_edges``.
     """
     pols = tuple(pols)
     bad = [p for p in pols if p not in _POLS]
@@ -229,9 +246,11 @@ def monostatic_rcs(
     el = np.broadcast_to(np.atleast_1d(np.asarray(el_deg, float)), (len(r),)).copy()
 
     sig, sig_po, sig_pt = _sweep(
-        mesh, r, r, freq_hz, pols, use_po, use_ptd, occlusion, chunk
+        mesh, r, r, freq_hz, pols, use_po, use_ptd, occlusion, chunk, min_wedge_n
     )
-    return RcsResult(az, el, float(freq_hz), sig, sig_po, sig_pt, mesh.name, False)
+    result = RcsResult(az, el, float(freq_hz), sig, sig_po, sig_pt, mesh.name, False)
+    result.excluded_edges = _edge_census(mesh, min_wedge_n)
+    return result
 
 
 def bistatic_rcs(
@@ -246,6 +265,7 @@ def bistatic_rcs(
     use_ptd: bool = True,
     occlusion: bool = True,
     chunk: int = 64,
+    min_wedge_n: float = _MIN_WEDGE_N,
 ) -> RcsResult:
     """Bistatic RCS for separate transmit and receive directions.
 
@@ -259,7 +279,7 @@ def bistatic_rcs(
     if len(r_i) != len(r_s):
         r_i, r_s = np.broadcast_arrays(r_i, r_s)
     sig, sig_po, sig_pt = _sweep(
-        mesh, r_i, r_s, freq_hz, pols, use_po, use_ptd, occlusion, chunk
+        mesh, r_i, r_s, freq_hz, pols, use_po, use_ptd, occlusion, chunk, min_wedge_n
     )
     az = np.broadcast_to(np.atleast_1d(np.asarray(sca_az_deg, float)), (len(r_i),)).copy()
     el = np.broadcast_to(np.atleast_1d(np.asarray(sca_el_deg, float)), (len(r_i),)).copy()

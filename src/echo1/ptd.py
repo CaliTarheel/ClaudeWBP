@@ -51,7 +51,7 @@ import numpy as np
 
 from .geometry import EdgeSet, normalize
 
-__all__ = ["fringe_coefficients", "po_edge_coefficients", "ptd_amplitude"]
+__all__ = ["fringe_coefficients", "po_edge_coefficients", "ptd_amplitude", "diffracting"]
 
 # Denominator magnitude below which a reflection/shadow boundary is assumed and
 # the (finite) fringe coefficient is recovered by a symmetric average.
@@ -59,6 +59,15 @@ _SING_TOL = 1e-6
 _SING_DELTA = 1e-4
 # Floor on sin(beta0); grazing-along-the-edge is a caustic of this theory.
 _SIN_BETA_FLOOR = 1e-3
+# Smallest exterior wedge angle (in units of pi) this model will diffract from.
+# Below about a right angle the Keller coefficient's poles crowd together --
+# they encode fields that have bounced several times inside the re-entrant
+# corner, which a single-bounce model has no way to represent, and the
+# coefficient grows without physical meaning.  CAD models also produce
+# degenerate n -> 0 edges wherever two faces end up coincident.  Such edges are
+# dropped rather than allowed to dominate the sum; :func:`echo1.solver
+# .monostatic_rcs` reports how much geometry that removes.
+_MIN_WEDGE_N = 0.5
 _TWO_PI = 2.0 * np.pi
 
 
@@ -189,6 +198,17 @@ def _azimuths(edges: EdgeSet, i_hat: np.ndarray, s_hat: np.ndarray):
     return phi, phi_p, np.maximum(sin_beta, _SIN_BETA_FLOOR)
 
 
+def diffracting(edges: EdgeSet, min_wedge_n: float = _MIN_WEDGE_N) -> np.ndarray:
+    """(E,) bool: edges whose wedge angle this model can honestly handle.
+
+    Coplanar facets (``n == 1``) are excluded because they diffract nothing,
+    and strongly re-entrant corners because single-bounce PTD does not apply
+    there -- see :data:`_MIN_WEDGE_N`.
+    """
+    n = edges.wedge_n
+    return (n >= min_wedge_n) & (np.abs(n - 1.0) > 1e-9)
+
+
 def ptd_amplitude(
     edges: EdgeSet,
     i_hat: np.ndarray,
@@ -198,6 +218,7 @@ def ptd_amplitude(
     k: float,
     active: np.ndarray,
     po_only: bool = False,
+    min_wedge_n: float = _MIN_WEDGE_N,
 ) -> np.ndarray:
     """Per-edge diffraction amplitude ``S``, with ``sigma = |sum S|^2``.
 
@@ -207,6 +228,7 @@ def ptd_amplitude(
     reproduces the asymptotic edge behaviour of physical optics itself -- the
     test suite uses that to check this module against :mod:`echo1.po`.
     """
+    active = np.asarray(active, bool) & diffracting(edges, min_wedge_n)[None, :]
     phi, phi_p, sin_beta = _azimuths(edges, i_hat, s_hat)
     n = np.broadcast_to(edges.wedge_n[None, :], phi.shape)
 

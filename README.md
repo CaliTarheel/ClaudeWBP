@@ -41,7 +41,7 @@ bistatic) RCS against aspect angle, polarisation and frequency.
 |---|---|---|
 | Facet returns | physical optics, Gordon's closed-form polygon integral | exact for the PO current, no surface meshing |
 | Edge returns | Ufimtsev fringe waves via equivalent edge currents | first order, exact on the Keller cone |
-| Hiding | facet orientation plus ray-traced occlusion | exact for convex bodies without the ray trace |
+| Hiding | facet orientation plus grid-accelerated ray tracing | exact for convex bodies without the ray trace |
 | Polarisation | VV, HH, HV, VH | co- and cross-polarised |
 
 ```python
@@ -95,6 +95,22 @@ That is planform alignment, and it is why the F-117's wing, tail, intakes and
 door edges all run along the same few lines.
 
 ### Command line
+
+### From CAD
+
+STEP and other B-rep files are tessellated first; a *planar* face tessellates
+exactly, so a faceted airframe loses nothing in the conversion.
+
+```
+pip install gmsh                              # only needed for STEP import
+python tools/step_to_mesh.py jet.step --out-dir meshes --scale 0.001
+python examples/cad_signature.py meshes/jet.obj --freq 10GHz --axes zxy
+```
+
+`step_to_mesh.py` keeps each solid separate, welds the sliver triangles CAD
+tessellation leaves behind, and reports whether each solid came out closed.
+`cad_signature.py` reorients the model into echo1's frame and writes the
+signature, a cut and a geometry render.
 
 ```
 echo1 shapes                                  # the built-in bodies
@@ -153,6 +169,11 @@ Worth being blunt about, because RCS codes are easy to over-trust.
   and `echo1.analytic` gives the closed forms to compare against.
 - **One diffraction per edge.** No edge-to-edge or creeping waves, which is
   where the near-grazing error above comes from.
+- **Convex and mildly re-entrant edges only.** Below about a right angle of
+  exterior wedge angle the Keller coefficient's poles crowd together --
+  they describe fields that have bounced several times inside the corner,
+  which a single-bounce model cannot carry. Such edges are dropped and the
+  result reports how much edge length that removed (`excluded_edges`).
 - **Perfect conductors.** No radar-absorbing material, no coatings, no
   dielectrics — a real signature problem is half materials.
 - **High frequency.** The body must be large compared with the wavelength; the
@@ -167,13 +188,14 @@ src/echo1/
   geometry.py   facets, and the wedge angle of every edge
   po.py         physical optics: Gordon's closed-form polygon integral
   ptd.py        Ufimtsev fringe coefficients and equivalent edge currents
-  shadow.py     orientation and ray-traced occlusion
+  shadow.py     orientation and grid-accelerated occlusion
   solver.py     the sweep engine and the result object
   shapes.py     built-in bodies, including the hopeless diamond
   analytic.py   closed-form cross sections, for checking
   meshio.py     OBJ and STL
   plotting.py   polar signatures, cuts, and a look at the geometry
   cli.py        the echo1 command
+tools/          STEP import via gmsh
 docs/HISTORY.md the program this reconstructs
 docs/THEORY.md  the derivations, including the ones done for this code
 validation/     the independent method-of-moments comparison
