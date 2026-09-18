@@ -142,3 +142,83 @@ def test_sweep_moves_little_metal():
     out, _, _ = sweep_to_planform(box, threshold_deg=20.0, target_az_deg=36.5)
     moved = np.linalg.norm(out.vertices - box.vertices, axis=1)
     assert moved.max() < 0.5 * box.max_dimension
+
+
+def _slab(n=5, half=1.0, thick=0.25):
+    """A closed slab whose top face is an n x n grid, so it can hold a pocket."""
+    g = np.linspace(-half, half, n)
+    gx, gy = np.meshgrid(g, g, indexing="ij")
+    top = np.column_stack([gx.ravel(), gy.ravel(), np.full(gx.size, thick)])
+    bot = np.column_stack([gx.ravel(), gy.ravel(), np.full(gx.size, -thick)])
+    verts = np.vstack([top, bot])
+    off = len(top)
+
+    def idx(i, j):
+        return i * n + j
+
+    faces = []
+    for i in range(n - 1):
+        for j in range(n - 1):
+            a, b, c, d = idx(i, j), idx(i + 1, j), idx(i + 1, j + 1), idx(i, j + 1)
+            faces += [[a, b, c], [a, c, d]]                     # top, +z outward
+            faces += [[off + a, off + c, off + b], [off + a, off + d, off + c]]
+    for i in range(n - 1):                                      # four side walls
+        for a, b in ((idx(i, 0), idx(i + 1, 0)), (idx(n - 1, i), idx(n - 1, i + 1)),
+                     (idx(n - 1 - i, n - 1), idx(n - 2 - i, n - 1)),
+                     (idx(0, n - 1 - i), idx(0, n - 2 - i))):
+            faces += [[a, off + a, off + b], [a, off + b, b]]
+    m = Mesh(verts, np.array(faces))
+    return m.flipped() if m.volume < 0 else m
+
+
+def test_fill_recess_restores_a_pocket():
+    from fill_recess import fill_recess
+
+    flat = _slab()
+    dented = flat.vertices.copy()
+    pocket = (np.abs(dented[:, 0]) < 0.6) & (np.abs(dented[:, 1]) < 0.6) \
+        & (dented[:, 2] > 0.0)
+    assert pocket.sum() >= 4
+    dented[pocket, 2] -= 0.18
+    dented_mesh = Mesh(dented, flat.faces)
+    assert dented_mesh.volume < flat.volume
+
+    out, moved, _ = fill_recess(dented_mesh, (-0.7, 0.7, -0.7, 0.7, 0.0, 0.3),
+                                axis=2, side=+1, margin=0.8)
+    assert moved >= int(pocket.sum())
+    assert out.volume == pytest.approx(flat.volume, rel=1e-6)
+    top = out.vertices[out.vertices[:, 2] > 0.0]
+    assert np.allclose(top[:, 2], 0.25, atol=1e-9)
+
+
+def test_fill_recess_leaves_the_surrounding_skin_alone():
+    from fill_recess import fill_recess
+
+    flat = _slab()
+    out, _, _ = fill_recess(flat, (-0.3, 0.3, -0.3, 0.3, 0.0, 0.3), axis=2, side=+1)
+    assert out.volume == pytest.approx(flat.volume, rel=1e-9)
+    assert out.n_faces == flat.n_faces
+
+
+def test_fill_recess_mirrors():
+    from fill_recess import fill_recess
+
+    flat = _slab(n=7, half=3.0)
+    dented = flat.vertices.copy()
+    for sign in (+1, -1):
+        sel = (np.abs(dented[:, 0]) < 1.0) & (np.abs(dented[:, 1] - sign * 1.5) < 0.6) \
+            & (dented[:, 2] > 0.0)
+        dented[sel, 2] -= 0.15
+    out, _, _ = fill_recess(Mesh(dented, flat.faces),
+                            (-1.1, 1.1, 0.8, 2.2, 0.0, 0.3),
+                            axis=2, side=+1, margin=0.9, mirror_axis=1)
+    assert out.volume == pytest.approx(flat.volume, rel=1e-6)
+
+
+def test_pipeline_reorient_is_a_rotation():
+    from pipeline import reorient
+
+    body = shapes.faceted_delta()
+    out = reorient(body, "zxy")
+    assert out.volume == pytest.approx(body.volume, rel=1e-9)
+    assert out.total_area == pytest.approx(body.total_area, rel=1e-9)
