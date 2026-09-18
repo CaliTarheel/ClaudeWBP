@@ -69,6 +69,8 @@ _SING_DELTA = 1e-4
 _SIN_BETA_FLOOR = 1e-3
 _SIN_BETA_TAPER = 0.10
 _SIN_BETA_FULL = 0.25
+# How far inside the wedge exterior an azimuth must sit to be used at all.
+_DOMAIN_MARGIN = 1e-6
 # Smallest exterior wedge angle (in units of pi) this model will diffract from.
 # A re-entrant corner is a multiple-bounce geometry, and single diffraction has
 # less and less to say about it as the corner sharpens.  The right-angle
@@ -248,6 +250,17 @@ def ptd_amplitude(
     active = np.asarray(active, bool) & diffracting(edges, min_wedge_n)[None, :]
     phi, phi_p, sin_beta = _azimuths(edges, i_hat, s_hat)
     n = np.broadcast_to(edges.wedge_n[None, :], phi.shape)
+
+    # The wedge coefficients are defined only over the exterior of the wedge,
+    # 0 < phi < n*pi.  A direction outside that lies inside the material: the
+    # edge is neither lit nor visible from there, and the formulas do not
+    # merely lose meaning, they land on poles.  On a real airframe an edge
+    # reporting phi = 360 degrees on a wedge spanning 135 degrees produced
+    # |f| = 3e4 and swamped everything else.
+    span = n * np.pi
+    inside = ((phi > _DOMAIN_MARGIN) & (phi < span - _DOMAIN_MARGIN)
+              & (phi_p > _DOMAIN_MARGIN) & (phi_p < span - _DOMAIN_MARGIN))
+    active = active & inside
 
     if po_only:
         f, g = po_edge_coefficients(phi, phi_p, n)

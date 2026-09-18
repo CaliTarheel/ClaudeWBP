@@ -217,3 +217,30 @@ def test_end_on_edges_do_not_diverge():
     assert amp[0] == amp.max()
     assert amp[-1] == 0.0
     assert amp.max() < 5.0 * e.length[0] * 2 * np.pi / 0.03
+
+
+def test_directions_inside_the_material_do_not_diffract():
+    """The wedge coefficients exist only over the exterior, 0 < phi < n*pi.
+    A direction outside that is inside the solid, and evaluating there lands
+    on poles rather than physics."""
+    from echo1.geometry import EdgeSet
+    from echo1.ptd import ptd_amplitude
+
+    e = EdgeSet(
+        p0=np.array([[0.0, 0.0, -0.5]]), p1=np.array([[0.0, 0.0, 0.5]]),
+        e_hat=np.array([[0.0, 0.0, 1.0]]), length=np.array([1.0]),
+        x_hat=np.array([[1.0, 0.0, 0.0]]), y_hat=np.array([[0.0, 1.0, 0.0]]),
+        wedge_n=np.array([0.75]), faces=np.array([[0, 1]]), n_adjacent=np.array([2]),
+    )
+    # Sweep the line of sight right around the edge.  Only the 135 degrees of
+    # exterior may respond.
+    a = np.radians(np.arange(2.0, 360.0, 4.0))
+    d = np.stack([np.cos(a), np.sin(a), np.zeros_like(a)], axis=1)
+    pol = np.tile(np.array([0.0, 0.0, 1.0]), (len(d), 1))
+    amp = np.abs(ptd_amplitude(e, -d, d, pol, pol, 2 * np.pi / 0.03,
+                               np.ones((len(d), 1), bool))[:, 0])
+    assert np.all(np.isfinite(amp))
+    outside = np.degrees(a) > 0.75 * 180.0
+    assert np.all(amp[outside] == 0.0)
+    assert amp[~outside].max() > 0.0
+    assert amp.max() < 50.0
