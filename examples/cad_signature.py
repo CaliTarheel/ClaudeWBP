@@ -23,7 +23,7 @@ from echo1 import analytic, plotting                                 # noqa: E40
 from echo1.cli import _frequency                                     # noqa: E402
 from echo1.geometry import Mesh                                      # noqa: E402
 from echo1.meshio import load_mesh                                   # noqa: E402
-from echo1.solver import monostatic_rcs                              # noqa: E402
+from echo1.solver import dihedral_corners, monostatic_rcs             # noqa: E402
 
 _AXIS = {"x": 0, "y": 1, "z": 2}
 
@@ -94,7 +94,14 @@ def main(argv=None) -> int:
     dropped, length = result.excluded_edges
     if dropped:
         print(f"note: {dropped} edges ({length:.1f} m) were too re-entrant for "
-              f"single-bounce PTD and were excluded\n")
+              f"single-bounce PTD and were excluded")
+    n_corner, l_corner = dihedral_corners(mesh)
+    if n_corner:
+        print(f"note: {n_corner} edges ({l_corner:.1f} m) form near-right-angle "
+              f"re-entrant corners.  Those are dihedral retroreflectors; their "
+              f"double-bounce\n      return is NOT modelled here, so the true RCS "
+              f"is higher than this in their\n      retroreflection directions.")
+    print()
 
     for p in pols:
         print(result.summary(p))

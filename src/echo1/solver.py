@@ -181,8 +181,21 @@ def _sweep(
 def _edge_census(mesh: Mesh, min_wedge_n: float):
     """How much edge length was dropped as too re-entrant to model."""
     edges = mesh.edges
-    dropped = (edges.wedge_n < min_wedge_n)
+    dropped = edges.wedge_n < min_wedge_n
     return int(dropped.sum()), float(edges.length[dropped].sum())
+
+
+def dihedral_corners(mesh: Mesh, tol: float = 0.05):
+    """``(count, length)`` of near-right-angle re-entrant edges.
+
+    These are dihedral retroreflectors.  Their true backscatter is a double
+    bounce, which this single-bounce model does not carry at all, so a body
+    with many of them will be under-predicted -- by a lot, in the corner's
+    retroreflection direction.
+    """
+    edges = mesh.edges
+    corner = np.abs(edges.wedge_n - 0.5) < tol
+    return int(corner.sum()), float(edges.length[corner].sum())
 
 
 def _frame(r):

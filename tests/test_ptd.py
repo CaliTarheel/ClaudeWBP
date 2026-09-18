@@ -152,3 +152,35 @@ def test_min_wedge_n_is_tunable():
     m = rect_plate(0.3, 0.2)
     assert diffracting(m.edges, min_wedge_n=0.5).sum() == 4      # the four rim edges
     assert diffracting(m.edges, min_wedge_n=2.5).sum() == 0
+
+
+@pytest.mark.parametrize("n", [0.5, 0.501, 0.55])
+def test_right_angle_reentrant_corners_are_excluded(n):
+    """A right-angle re-entrant corner is a dihedral retroreflector: the
+    backscatter coefficient has a pole in the retroreflection direction, where
+    the real mechanism is the double bounce this model does not carry."""
+    from echo1.geometry import EdgeSet
+    from echo1.ptd import diffracting
+
+    e = EdgeSet(
+        p0=np.zeros((1, 3)), p1=np.array([[0.0, 0.0, 1.0]]),
+        e_hat=np.array([[0.0, 0.0, 1.0]]), length=np.array([1.0]),
+        x_hat=np.array([[1.0, 0.0, 0.0]]), y_hat=np.array([[0.0, 1.0, 0.0]]),
+        wedge_n=np.array([n]), faces=np.array([[0, 1]]), n_adjacent=np.array([2]),
+    )
+    assert not diffracting(e).any()
+
+
+def test_convex_right_angle_still_diffracts():
+    """The guard must not take the ordinary convex edges with it."""
+    from echo1.ptd import diffracting
+    from echo1.shapes import box
+    n = box().edges.wedge_n
+    assert diffracting(box().edges)[np.isclose(n, 1.5)].all()
+
+
+def test_dihedral_corners_are_reported():
+    from echo1.shapes import dihedral
+    from echo1.solver import dihedral_corners
+    count, length = dihedral_corners(dihedral())
+    assert count >= 1 and length > 0.0

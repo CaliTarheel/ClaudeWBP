@@ -60,14 +60,21 @@ _SING_DELTA = 1e-4
 # Floor on sin(beta0); grazing-along-the-edge is a caustic of this theory.
 _SIN_BETA_FLOOR = 1e-3
 # Smallest exterior wedge angle (in units of pi) this model will diffract from.
-# Below about a right angle the Keller coefficient's poles crowd together --
-# they encode fields that have bounced several times inside the re-entrant
-# corner, which a single-bounce model has no way to represent, and the
-# coefficient grows without physical meaning.  CAD models also produce
-# degenerate n -> 0 edges wherever two faces end up coincident.  Such edges are
-# dropped rather than allowed to dominate the sum; :func:`echo1.solver
-# .monostatic_rcs` reports how much geometry that removes.
-_MIN_WEDGE_N = 0.5
+# A re-entrant corner is a multiple-bounce geometry, and single diffraction has
+# less and less to say about it as the corner sharpens.  The right-angle
+# re-entrant corner (n = 1/2) is the extreme case: it is a dihedral
+# retroreflector, and at backscatter the Keller coefficient has a pole exactly
+# in the retroreflection direction, where the true return is the double bounce
+# this code does not carry.  Measured worst-case |f| at backscatter:
+#
+#     n     0.50    0.501   0.51    0.55    0.60    |  1.05..2.0
+#     |f|   6667    473     48      9.2     4.2     |  <= 1.0
+#
+# so edges sharper than n = 0.6 (a 108 degree exterior angle) are dropped
+# rather than allowed to dominate the sum with a number that is not physics.
+# CAD models also produce degenerate n -> 0 edges wherever two faces end up
+# coincident.  :func:`echo1.solver.monostatic_rcs` reports what this removed.
+_MIN_WEDGE_N = 0.6
 _TWO_PI = 2.0 * np.pi
 
 

@@ -169,11 +169,14 @@ Worth being blunt about, because RCS codes are easy to over-trust.
   and `echo1.analytic` gives the closed forms to compare against.
 - **One diffraction per edge.** No edge-to-edge or creeping waves, which is
   where the near-grazing error above comes from.
-- **Convex and mildly re-entrant edges only.** Below about a right angle of
-  exterior wedge angle the Keller coefficient's poles crowd together --
-  they describe fields that have bounced several times inside the corner,
-  which a single-bounce model cannot carry. Such edges are dropped and the
-  result reports how much edge length that removed (`excluded_edges`).
+- **Convex and mildly re-entrant edges only.** A re-entrant corner is a
+  multiple-bounce geometry. The right-angle case (wedge `n = 1/2`) is a
+  dihedral retroreflector, and the single-diffraction coefficient has a pole
+  exactly in its retroreflection direction, reaching 6,667 against `<= 1.0`
+  across the whole convex range. Edges sharper than `n = 0.6` are dropped and
+  the result reports how much that removed (`excluded_edges`); use
+  `solver.dihedral_corners` to find out whether a body has corners whose
+  unmodelled double bounce will make the real RCS *higher* than predicted.
 - **Perfect conductors.** No radar-absorbing material, no coatings, no
   dielectrics — a real signature problem is half materials.
 - **High frequency.** The body must be large compared with the wavelength; the
