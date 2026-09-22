@@ -154,6 +154,21 @@ open boundaries, unmodelled dihedral corners) from what is merely worth
 knowing (asymmetry, sub-wavelength detail), and names the modelling-package
 operation that fixes each.
 
+`check_mesh.py` asks whether the geometry is fit to solve. `audit.py` asks the
+other question — whether it was *shaped* — using the two closed-form predictors
+above, which run in under a second on a 25,000-facet import:
+
+```
+python tools/audit.py model.obj --freq 10GHz
+python tools/audit.py model.obj --threat -90:-85 --threat -10:10
+```
+
+It reports the number of distinct edge-lobe azimuths, the aspect every flat
+panel mirrors at — twice, per panel and bundled over merely *parallel* panels,
+which brackets the answer from below and above — and how much metal points into
+each elevation band you name. Negative elevation is a radar below, so
+`--threat -90:-85` is the aspect every ground radar you overfly passes through.
+
 ```
 echo1 shapes                                  # the built-in bodies
 echo1 info  --shape faceted-delta             # facet and edge structure
@@ -240,7 +255,7 @@ src/echo1/
   meshio.py     OBJ and STL
   plotting.py   polar signatures, cuts, and a look at the geometry
   cli.py        the echo1 command
-tools/          STEP import via gmsh
+tools/          STEP import, mesh preflight, and the design audit
 docs/HISTORY.md the program this reconstructs
 docs/THEORY.md  the derivations, including the ones done for this code
 validation/     the independent method-of-moments comparison

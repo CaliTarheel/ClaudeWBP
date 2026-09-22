@@ -14,7 +14,7 @@ from __future__ import annotations
 import numpy as np
 
 from .geometry import Mesh
-from .ptd import fringe_coefficients
+from .ptd import _MIN_WEDGE_N, fringe_coefficients
 
 __all__ = [
     "plate", "polygon_plate", "disc", "box", "sphere", "cylinder", "dihedral",
@@ -522,7 +522,8 @@ def panels(mesh: Mesh, tol: float = 1e-6):
     return np.array([find(i) for i in range(mesh.n_faces)])
 
 
-def specular_aspects(mesh: Mesh, min_area: float = 0.0, freq_hz: float = 10e9):
+def specular_aspects(mesh: Mesh, min_area: float = 0.0, freq_hz: float = 10e9,
+                     bundle_deg: float = 0.0):
     """Aspects where each flat panel mirrors, and how loud it is when it does.
 
     The facet counterpart to :func:`spike_azimuths`.  A flat panel returns
@@ -535,25 +536,47 @@ def specular_aspects(mesh: Mesh, min_area: float = 0.0, freq_hz: float = 10e9):
     peak at 70 degrees below is a peak no radar will ever stand in, while a
     small facet whose normal lies near the horizon is a hole in the design
     however modest its area.
+
+    ``bundle_deg`` adds panels that are merely *parallel* -- not touching --
+    within that many degrees, and reports the bundle.  Panels pointed the same
+    way flash at the same aspect and can add in phase, and since the return
+    goes as area squared, thirteen scattered 0.05 m^2 faces all facing aft are
+    worth 15 dB more together than the loudest of them alone.  That is an upper
+    bound, reached only when the phases happen to line up -- but on a machined
+    airframe, where faces sit at round multiples of a millimetre, they line up
+    more often than they have any right to.
     """
     lam = 299792458.0 / freq_hz
     group = panels(mesh)
-    rows = []
-    for g in np.unique(group):
-        m = group == g
-        area = float(mesh.face_areas[m].sum())
-        if area <= min_area:
-            continue
-        n = mesh.face_normals[m][int(np.argmax(mesh.face_areas[m]))]
-        rows.append((float(np.degrees(np.arctan2(n[1], n[0])) % 360.0),
-                     float(np.degrees(np.arcsin(np.clip(n[2], -1.0, 1.0)))),
-                     area,
-                     float(10.0 * np.log10(4.0 * np.pi * area ** 2 / lam ** 2))))
-    return sorted(rows, key=lambda r: -r[3])
+    label, index = np.unique(group, return_inverse=True)
+    area = np.bincount(index, weights=mesh.face_areas, minlength=len(label))
+    # the biggest facet in each group speaks for it
+    order = np.lexsort((-mesh.face_areas, index))
+    first = np.searchsorted(index[order], np.arange(len(label)))
+    n = mesh.face_normals[order[first]]
+    az = np.degrees(np.arctan2(n[:, 1], n[:, 0])) % 360.0
+    el = np.degrees(np.arcsin(np.clip(n[:, 2], -1.0, 1.0)))
+    if bundle_deg > 0.0:
+        # quantise the pointing direction; at the poles azimuth means nothing
+        cell = np.round(el / bundle_deg)
+        polar = np.abs(np.abs(el) - 90.0) < bundle_deg
+        key = np.where(polar, 0.0, np.round(az / bundle_deg))
+        _, index = np.unique(np.column_stack([cell, key]), axis=0,
+                             return_inverse=True)
+        bundled = np.bincount(index, weights=area)
+        pick = np.lexsort((-area, index))
+        first = np.searchsorted(index[pick], np.arange(len(bundled)))
+        az, el, area = az[pick[first]], el[pick[first]], bundled
+    keep = area > min_area
+    az, el = az[keep], el[keep]
+    a = area[keep]
+    peak = 10.0 * np.log10(4.0 * np.pi * a ** 2 / lam ** 2)
+    return sorted(((float(w), float(x), float(y), float(z))
+                   for w, x, y, z in zip(az, el, a, peak)), key=lambda r: -r[3])
 
 
 def spike_azimuths(mesh: Mesh, min_length: float = 1.0, tol_deg: float = 1.0,
-                   weight: str = "fringe"):
+                   weight: str = "fringe", min_wedge_n: float = _MIN_WEDGE_N):
     """Azimuths where a body's long edges will throw their diffraction lobes.
 
     A straight edge radiates into the plane perpendicular to itself, so at a
@@ -567,9 +590,14 @@ def spike_azimuths(mesh: Mesh, min_length: float = 1.0, tol_deg: float = 1.0,
     the strength reads in *knife-edge-equivalent metres*: a metre of sharp
     edge counts one, a metre of a 20-degree crease counts about a fifth.  Pass
     ``weight="length"`` for the raw geometry.
+
+    Edges below ``min_wedge_n`` are left out, to match what the solver will
+    actually show: single-bounce PTD cannot carry a wedge that re-entrant.
+    They are not quiet -- they are the opposite -- so on an imported model
+    check how much edge that drops before trusting the ranking.
     """
     e = mesh.edges
-    keep = e.length > min_length
+    keep = (e.length > min_length) & (e.wedge_n >= min_wedge_n)
     if not np.any(keep):
         return []
     az = np.degrees(np.arctan2(e.e_hat[keep, 1], e.e_hat[keep, 0]))

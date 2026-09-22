@@ -227,3 +227,29 @@ def test_specular_aspects_matches_the_flat_plate_formula():
     assert el == pytest.approx(90.0)
     lam = 299792458.0 / 10e9
     assert peak == pytest.approx(10.0 * np.log10(4.0 * np.pi * 36.0 / lam ** 2))
+
+
+def test_specular_bundling_adds_parallel_panels_that_do_not_touch():
+    """Faces pointed the same way flash together whether or not they meet."""
+    a = shapes.plate(2.0, 2.0)
+    b = shapes.plate(2.0, 2.0).translated(np.array([0.0, 5.0, 0.0]))
+    both = shapes.Mesh(np.vstack([a.vertices, b.vertices]),
+                       np.vstack([a.faces, b.faces + len(a.vertices)]),
+                       two_sided=True, name="two-plates")
+    alone = shapes.specular_aspects(both)
+    bundled = shapes.specular_aspects(both, bundle_deg=1.0)
+    assert len(alone) == 2 and len(bundled) == 1
+    assert bundled[0][2] == pytest.approx(8.0)
+    assert bundled[0][3] == pytest.approx(alone[0][3] + 20.0 * np.log10(2.0))
+
+
+def test_spike_azimuths_leaves_out_what_the_solver_cannot_carry():
+    """The prediction must rank what will actually be solved, and no more."""
+    m = shapes.dihedral()                       # its seam is a right-angle corner
+    assert m.edges.wedge_n.min() == pytest.approx(0.5)
+    seam = m.edges.length[m.edges.wedge_n < 0.6].sum()
+    kept = sum(w for _, w in shapes.spike_azimuths(m, min_length=0.1))
+    everything = sum(w for _, w in
+                     shapes.spike_azimuths(m, min_length=0.1, min_wedge_n=0.0))
+    # a right-angle wedge is as strong as a knife, and it flashes both ways
+    assert everything - kept == pytest.approx(2.0 * seam, rel=1e-6)
