@@ -139,3 +139,91 @@ def test_transom_rake_removes_the_tail_flash():
     # Every facet of the raked body points well out of the horizontal plane.
     n = shapes.hopeless_diamond().face_normals
     assert np.degrees(np.arcsin(np.abs(n[:, 2]))).min() > 30.0
+
+
+# ---------------------------------------------------------------- the fighter
+
+def test_faceted_fighter_is_a_clean_solid():
+    m = shapes.faceted_fighter()
+    assert m.is_closed
+    assert m.volume > 0
+    assert m.edges.wedge_n.min() > 0.6, "nothing should be too re-entrant to model"
+    assert np.allclose(np.sort(m.vertices[:, 1]), -np.sort(-m.vertices[:, 1])[::-1])
+
+
+def test_faceted_fighter_puts_every_planform_edge_on_two_directions():
+    """Chine and sawtooth must share the same two plan directions."""
+    e = shapes.faceted_fighter().edges
+    flat = (np.abs(e.p0[:, 2]) < 1e-9) & (np.abs(e.p1[:, 2]) < 1e-9)
+    d = e.e_hat[flat]
+    angle = np.degrees(np.arctan2(np.abs(d[:, 1]), np.abs(d[:, 0])))
+    assert len(np.unique(np.round(angle, 6))) == 1
+
+
+def test_the_planform_azimuths_carry_more_edge_than_anything_else():
+    """The rule's whole claim: four azimuths take the lot."""
+    top = shapes.spike_azimuths(shapes.faceted_fighter())[:4]
+    assert sorted(round(a, 1) for a, _ in top) == [54.9, 125.1, 234.9, 305.1]
+
+
+def test_fin_alignment_moves_the_lobes_without_changing_the_aircraft():
+    aligned = shapes.spike_azimuths(shapes.faceted_fighter())
+    loose = shapes.spike_azimuths(shapes.faceted_fighter(fin_align=False))
+    assert max(w for a, w in aligned if abs(a - 125.07) < 1.0) > \
+        max(w for a, w in loose if abs(a - 125.07) < 1.0)
+    assert max(w for a, w in loose if abs(a - 90.0) < 1.0) > \
+        max(w for a, w in aligned if abs(a - 90.0) < 1.0)
+
+
+def test_an_apex_outside_the_kernel_is_refused():
+    """A fan from a point only tiles a polygon the point can see all of."""
+    with pytest.raises(ValueError, match="kernel"):
+        shapes.faceted_fighter(apex_frac=0.28)
+    shapes.faceted_fighter(teeth=1, apex_frac=0.28)          # convex: fine
+
+
+def test_fins_taper_to_a_sharp_rim():
+    """No narrow flat strip may survive round a fin: strips mirror hard."""
+    m = shapes.faceted_fighter()
+    el = np.degrees(np.arcsin(np.abs(m.face_normals[:, 2])))
+    assert el.min() > 20.0, "every facet must mirror well off the horizon"
+
+
+def test_spike_azimuths_predicts_where_the_solver_finds_the_lobes():
+    from echo1.plotting import to_dbsm
+    from echo1.solver import monostatic_rcs
+    m = shapes.faceted_fighter()
+    az = np.arange(0.0, 360.0, 0.02)
+    db = to_dbsm(monostatic_rcs(m, 10e9, az, pols=("VV",)).sigma["VV"])
+    for target, _ in shapes.spike_azimuths(m)[:6]:
+        near = np.abs((az - target + 180.0) % 360.0 - 180.0) <= 0.5
+        assert db[near].max() > np.median(db) + 25.0, f"no lobe at {target}"
+
+
+def test_spike_azimuths_weighting_ranks_a_crease_below_a_knife():
+    m = shapes.faceted_fighter()
+    by_length = dict(np.round(shapes.spike_azimuths(m, weight="length"), 3))
+    by_fringe = dict(np.round(shapes.spike_azimuths(m), 3))
+    beam = min(by_length, key=lambda a: abs(a - 90.0))
+    planform = min(by_length, key=lambda a: abs(a - 125.07))
+    assert by_length[beam] < by_length[planform]
+    assert by_fringe[beam] / by_fringe[planform] < by_length[beam] / by_length[planform]
+
+
+def test_spike_azimuths_merges_a_cluster_straddling_zero():
+    """Two edges either side of due north are one lobe, not two."""
+    m = shapes.plate(4.0, 4.0).rotated(np.array([0.0, 0.0, 1.0]),
+                                       np.radians(0.5))
+    out = shapes.spike_azimuths(m, tol_deg=2.0)
+    assert len(out) == 4, out
+    assert any(min(a, 360.0 - a) < 1.0 for a, _ in out), out
+
+
+def test_specular_aspects_matches_the_flat_plate_formula():
+    """Coplanar triangles must be gathered before the area is squared."""
+    m = shapes.plate(2.0, 3.0)
+    (az, el, area, peak), = shapes.specular_aspects(m)
+    assert area == pytest.approx(6.0)
+    assert el == pytest.approx(90.0)
+    lam = 299792458.0 / 10e9
+    assert peak == pytest.approx(10.0 * np.log10(4.0 * np.pi * 36.0 / lam ** 2))

@@ -217,3 +217,71 @@ sides combine with the wrong relative sign.
 - **No creeping or travelling waves**, no surface-wave launch at a discontinuity.
 - **Perfect conductors only** — no absorber, no coatings.
 - **High frequency**, far field, single frequency.
+
+## 5. What planform alignment can and cannot reach
+
+Alignment is the design rule that falls out of §2: an edge throws into the fan
+perpendicular to itself, so an outline built from few directions throws into
+few azimuths. Two results are worth having exactly, because they decide how a
+faceted body is put together rather than merely how its outline is drawn.
+
+### Specular and diffraction land on the same azimuths
+
+A panel that contains a horizontal edge of direction $\hat u$ has
+$\hat n \perp \hat u$, and since $\hat u$ is horizontal the *plan projection*
+of $\hat n$ is perpendicular to $\hat u$ too. So
+
+$$\operatorname{az}(\hat n) = \operatorname{az}(\hat u) \pm 90^\circ,$$
+
+which is exactly the azimuth at which that edge flashes. Skin panels bounded by
+an aligned chine therefore mirror at the same azimuths their chine edges
+diffract into — differing only in elevation. Alignment buys twice.
+
+### No crease off a planform vertex can itself be aligned
+
+Let two skin panels meet along a crease, each containing one chine edge, and let
+the two chine edges meet at a planform vertex $P$ in the chine plane. Write the
+chine directions as the two family directions $u = (-c, s)$, $v = (-c, -s)$ with
+$c = \cos\varphi$, $s = \sin\varphi$, and let each panel rise from its own chine
+edge with slope $g_i$ along the interior normal $m_i \perp u_i$, so that
+$m_1 = -(s, c)$ and $m_2 = (s, -c)$. Both panels pass through $P$, so the crease
+does, and along it the two heights agree:
+
+$$g_1\,(m_1 \cdot d) = g_2\,(m_2 \cdot d) \quad\Longrightarrow\quad
+d \perp (g_1 m_1 - g_2 m_2),$$
+
+which gives
+
+$$\frac{d_x}{d_y} \;=\; \cot\varphi \;\frac{g_2 - g_1}{g_2 + g_1}.$$
+
+A crease on family A needs $d_x/d_y = -\cot\varphi$, hence $g_2 = 0$; on family
+B it needs $+\cot\varphi$, hence $g_1 = 0$. Either way one panel has no rise at
+all and is the chine plane itself. **So a faceted body over an aligned planform
+always has creases off the family**, at the wingtip and at every sawtooth
+vertex, and no choice of dihedral fixes it.
+
+Three things can still be done about them, and `shapes.faceted_fighter` does all
+three:
+
+1. **Make the crease vanish** by making the two panels coplanar — which means
+   lifting the vertex out of the chine plane, i.e. a thin outer wing rather than
+   a body fanned from a single peak.
+2. **Make the crease shallow.** The fringe coefficient falls fast as a wedge
+   approaches flat: $|f| = 0.16$ at $n = 1.12$ against $0.82$ at $n = 1.81$,
+   14 dB in power per unit length. This is why `spike_azimuths` weights by the
+   coefficient and not by length — length alone over-ranks a long soft crease
+   by an order of magnitude.
+3. **Aim the crease at an azimuth already conceded**, which for a fore-and-aft
+   spine is the beam.
+
+### A fan only tiles a polygon it can see all of
+
+A skin fanned from a single peak to every chine vertex tiles the planform only
+if the peak lies in the polygon's *kernel* — the set of points that see the
+whole boundary. A sawtooth planform is not convex, so this is a real
+constraint. A peak outside the kernel produces triangles that overlap in plan:
+the mesh is still closed, still returns a volume, and still sweeps, but the
+skin has folded back through itself, and the giveaway is a scatter of edges at
+$n \approx 0.25$–$0.5$ that were never designed — right-angle corners, the one
+thing a shaped aircraft must not have. `faceted_fighter` checks the clearance
+and refuses.

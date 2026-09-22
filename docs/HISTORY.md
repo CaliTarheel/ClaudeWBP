@@ -75,3 +75,33 @@ apertures, seams and inlet ducts as about shape; this models shape alone.
 
 The historical claims above are from Lockheed Martin's published account and
 Air & Space Forces Magazine, both linked from the README.
+
+## Designing one, rather than analysing one
+
+`examples/faceted_fighter.py` closes the loop the other way round. Everything
+above is about taking a shape and finding its signature; the reason Lockheed
+wanted the code was the reverse — to state a shaping rule, build to it, and
+find out at the drawing stage whether the rule had actually been obeyed.
+
+Two predictors answer in closed form, with no solve at all:
+`shapes.spike_azimuths` gives the azimuths the edges will throw into, and
+`shapes.specular_aspects` gives the aspect each flat panel mirrors at and how
+loud it is there. Both are elementary — an edge radiates perpendicular to
+itself, a panel returns `4πA²/λ²` along its own normal — and both are things a
+designer can check against a drawing in a minute. The solver's job is then to
+disagree with them, and every disagreement in this exercise turned out to be a
+fault in the geometry rather than in the prediction:
+
+- a skin fanned from a peak the planform could not see all of had folded
+  through itself, leaving right-angle re-entrant corners nobody drew;
+- fins swept the conventional way added two edge directions to a planform that
+  had been carefully built from two;
+- fins given thickness the obvious way left a 12 cm flat strip round the rim,
+  and a 12 cm strip at 10 GHz is four wavelengths of mirror;
+- and a fin's cant angle turned out to *be* the elevation its remaining
+  mirror points at, which is the whole of why stealth aircraft cant their fins
+  rather than shrink them.
+
+That last one is the clearest statement of what shaping is. Canting a fin from
+vertical to 20 degrees does not make its 45 dBsm specular smaller. It moves it
+16 degrees below the horizon, where nothing is standing.

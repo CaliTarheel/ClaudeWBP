@@ -94,6 +94,35 @@ equal area, 25° off the plate plane:
 That is planform alignment, and it is why the F-117's wing, tail, intakes and
 door edges all run along the same few lines.
 
+**Then check that you actually did.** `examples/faceted_fighter.py` builds a
+20 m faceted airframe out of those two rules and then audits it. Two predictors
+answer in closed form, before anything is solved:
+
+| | what it answers | how |
+|---|---|---|
+| `shapes.spike_azimuths` | where the edges will throw | an edge radiates perpendicular to itself, weighted by that wedge's fringe coefficient |
+| `shapes.specular_aspects` | where each panel will mirror, and how loud | `4πA²/λ²` straight back along its own normal |
+
+Weighting by the coefficient rather than by length is what makes the first one
+usable: a 41 m fore-and-aft spine at `n = 1.15` is a fifth as loud, per metre,
+as an 11 m knife at `n = 1.81`, and ranking by length puts it first. Run
+against the aircraft, the two say four azimuths carry 23.5 knife-edge-equivalent
+metres each, the beam carries 8.6, and nothing mirrors within 23.8° of the
+horizon. The solve then puts every lobe within 0.03° of where they said.
+
+The audit found four faults, which is the point of having it:
+
+| found by | what was wrong | what it cost |
+|---|---|---|
+| `check_mesh` | right-angle re-entrant edges nobody designed — the skin fanned from a peak outside the planform's kernel had folded through itself | corner reflectors, and a mesh that sweeps without complaining |
+| `spike_azimuths` | fins swept conventionally, adding a third and fourth edge direction | 5 dB on the nose-sector mean, and a new lobe pair 20° off the tail |
+| `specular_aspects` | fins given thickness the obvious way, leaving a 12 cm flat strip round the rim | 31 dBsm at 10° elevation, against 14 once the rim is sharp |
+| `specular_aspects` | fin cant, which sets the elevation that strip-free surface mirrors at | 28 dB between a vertical fin and one canted 20° |
+
+None of that is about the aircraft. It is about how the loop runs: state the
+rule, build to it, predict in closed form, solve, and believe the disagreement.
+
+
 ### Command line
 
 ### From CAD
@@ -206,7 +235,7 @@ src/echo1/
   ptd.py        Ufimtsev fringe coefficients and equivalent edge currents
   shadow.py     orientation and grid-accelerated occlusion
   solver.py     the sweep engine and the result object
-  shapes.py     built-in bodies, including the hopeless diamond
+  shapes.py     built-in bodies, and the two closed-form design predictors
   analytic.py   closed-form cross sections, for checking
   meshio.py     OBJ and STL
   plotting.py   polar signatures, cuts, and a look at the geometry
