@@ -165,9 +165,16 @@ python tools/audit.py model.obj --threat -90:-85 --threat -10:10
 
 It reports the number of distinct edge-lobe azimuths, the aspect every flat
 panel mirrors at — twice, per panel and bundled over merely *parallel* panels,
-which brackets the answer from below and above — and how much metal points into
-each elevation band you name. Negative elevation is a radar below, so
-`--threat -90:-85` is the aspect every ground radar you overfly passes through.
+which brackets the answer from below and above — and, for each panel, **the
+area of ground its lobe lights** from a stated altitude.
+
+That last column is the one to read, because peak dBsm inverts the ranking.
+A panel is louder *and* narrower as it grows, and the two cancel exactly:
+`peak × lobe ≈ 4πA` however the area is cut up, so folding a panel never
+removes anything, it only trades height for width. What changes is where the
+lobe lands. On the model below, a 53 m² belly peaks at 76 dBsm and lights
+780 m² of ground — a radar must be within 18 m of your track to see it —
+while a 0.04 m² vertical face peaks 63 dB lower and lights 7,200 km².
 
 ```
 echo1 shapes                                  # the built-in bodies

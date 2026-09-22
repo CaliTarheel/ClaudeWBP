@@ -285,3 +285,46 @@ skin has folded back through itself, and the giveaway is a scatter of edges at
 $n \approx 0.25$–$0.5$ that were never designed — right-angle corners, the one
 thing a shaped aircraft must not have. `faceted_fighter` checks the clearance
 and refuses.
+
+## 6. What shaping cannot do, and where to put what is left
+
+A flat panel of area $A$ returns
+
+$$\sigma_{\text{peak}} = \frac{4\pi A^2}{\lambda^2}$$
+
+along its own normal, into a lobe of solid angle $\Omega \approx \lambda^2 / A$.
+The product is
+
+$$\sigma_{\text{peak}}\,\Omega \;\approx\; 4\pi A,$$
+
+which depends on the area and **not** on how the area is divided. Fold one
+panel into two and each is 6 dB quieter over twice the solid angle; fold it
+into ten and each is 20 dB quieter over ten times the solid angle. Nothing is
+destroyed. Checked numerically over a 25 m² plate cut into 1, 2, 4 and 10
+pieces, the product is 314.2 in every case, against $4\pi A = 314.2$.
+
+So faceting does not reduce a return. It relocates it, and trades peak height
+against angular width at a fixed product. Only three things actually remove
+energy: less lit area, absorber, and hiding one part behind another.
+
+### Which means the question is where the lobe lands, not how tall it is
+
+Against a ground radar, a lobe aimed at depression angle $|\varepsilon|$ from
+altitude $h$ paints the ground between the near and far edges of its cone. As
+$|\varepsilon| \to 90°$ the cone closes into a disc directly below of radius
+$h\tan\theta$, with $\theta \approx \lambda / 2\sqrt{A}$; as
+$|\varepsilon| \to 0$ it smears out to the horizon. For a 53 m² belly at
+10 GHz and 25,000 ft that disc is 31 m across — 780 m² of ground. The same
+aircraft's 0.04 m² faces, standing vertical and flashing 3° below the horizon,
+are 60 dB quieter and paint **7,200 km²**.
+
+That is the whole of why the F-117 is flat-bottomed and has no keel. The belly
+is the largest single piece of area on the aircraft, its return cannot be
+reduced by folding, and the nadir is the one direction with no solid angle in
+it. Putting the biggest lobe there is not a concession to the weapons bay; it
+is the best available use of the direction. A keel would take that same energy
+and spread it over a cone a radar can stand in.
+
+`tools/audit.py` ranks panels by the ground their lobe lights rather than by
+peak, because peak alone inverts the ranking: it puts a belly that a radar must
+be within 18 m to see above a vertical face that lights half a county.

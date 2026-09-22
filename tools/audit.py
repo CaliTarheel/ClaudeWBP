@@ -37,16 +37,58 @@ from echo1 import shapes                                             # noqa: E40
 from echo1.cli import _frequency                                     # noqa: E402
 from echo1.meshio import load_mesh                                   # noqa: E402
 
-#: The bands worth naming by default, and why each one is a band worth naming.
+#: The bands worth naming, taken from where a radar can actually stand.  At
+#: 25,000 ft a ground set 150 km out is 3 deg below you, 50 km out is 9 deg,
+#: 25 km out is 18 deg.  By 30 deg it is 15 km away and the engagement is
+#: already decided; by 60 deg it is under 5 km and you are not being detected,
+#: you are being overflown.
 DEFAULT_THREATS = (
-    (-10.0, 10.0, "co-altitude"),
-    (-90.0, -85.0, "straight down -- every radar you overfly passes through it"),
-    (-60.0, -20.0, "look-up, at a standoff"),
-    (20.0, 60.0, "look-down, from a fighter above"),
+    (-20.0, -3.0, "ground radar at 25-150 km: the band detection happens in"),
+    (-10.0, 10.0, "co-altitude: another aircraft, or a set on high ground"),
+    (-60.0, -20.0, "inside 15 km, where it is already too late"),
+    (-90.0, -60.0, "overhead, which almost nothing occupies"),
 )
 
 
-def audit(mesh, freq_hz, threats, top=8, min_length=0.3, bundle_deg=1.0):
+def lit_ground(area, el_deg, lam, altitude_m, earth_m=6371000.0):
+    """Ground area a panel's specular lobe paints, in square metres.
+
+    Peak alone ranks a design wrongly, because a bigger panel is louder *and*
+    narrower and the two cancel exactly: ``peak x lobe = 4 pi A`` however the
+    area is cut up.  What shaping changes is not how much return there is but
+    what solid angle it is spread over -- and, against a ground threat, how
+    much ground that solid angle lands on.  A lobe aimed at the horizon is
+    smeared over half a county; the same lobe aimed at the nadir lands in a
+    circle you could park a lorry in.
+
+    The lobe is taken as a cone of half-angle ``lambda / 2 sqrt(A)``, mapped
+    onto flat ground between its near and far edges and clipped at the radar
+    horizon.  At the nadir the cone closes into a disc and the azimuth spread
+    becomes the full circle, which the formula reaches on its own.
+    """
+    if el_deg >= 0.0:
+        return float("inf")                  # points at or above the horizon
+    theta = min(lam / (2.0 * np.sqrt(max(area, 1e-9))), np.pi / 2.0)
+    horizon = np.sqrt(2.0 * earth_m * altitude_m)
+    dep = np.radians(abs(el_deg))
+    far, near = dep - theta, min(dep + theta, np.pi / 2.0)
+    r_far = horizon if far <= 1e-9 else min(altitude_m / np.tan(far), horizon)
+    r_near = 0.0 if near >= np.pi / 2.0 - 1e-9 else min(altitude_m / np.tan(near),
+                                                        horizon)
+    spread = min(2.0 * theta / max(np.cos(np.radians(el_deg)), 1e-9), 2.0 * np.pi)
+    return 0.5 * spread * max(r_far ** 2 - r_near ** 2, 0.0)
+
+
+def _ground(value):
+    if not np.isfinite(value):
+        return "  never lands"
+    if value > 1e6:
+        return f"{value / 1e6:9.2f} km2"
+    return f"{value:9.0f} m2"
+
+
+def audit(mesh, freq_hz, threats, top=8, min_length=0.3, bundle_deg=1.0,
+          altitude_m=7620.0):
     lam = 299792458.0 / freq_hz
     e = mesh.edges
     group = shapes.panels(mesh)
@@ -71,28 +113,46 @@ def audit(mesh, freq_hz, threats, top=8, min_length=0.3, bundle_deg=1.0):
 
     one = shapes.specular_aspects(mesh, freq_hz=freq_hz)
     bun = shapes.specular_aspects(mesh, freq_hz=freq_hz, bundle_deg=bundle_deg)
-    print(f"\nPANELS: loudest bundle {bun[0][3]:.1f} dBsm "
-          f"({bun[0][2]:.2f} m^2) at az {bun[0][0]:.1f}, el {bun[0][1]:+.1f}")
-    print(f"     {'area':>8} {'alone':>8} {'bundled':>8}  {'az':>7} {'el':>7}")
-    for az, el, a, pk in bun[:top]:
+    print(f"\nPANELS, ranked by the ground they light from "
+          f"{altitude_m:.0f} m ({altitude_m / 0.3048:.0f} ft)")
+    print(f"     {'area':>8} {'alone':>8} {'bundled':>8}  {'az':>7} {'el':>7}"
+          f" {'lit ground':>13}")
+    rows = []
+    for az, el, a, pk in bun:
         alone = max((r[3] for r in one
                      if abs((r[0] - az + 180) % 360 - 180) < bundle_deg
                      and abs(r[1] - el) < bundle_deg), default=float("-inf"))
-        print(f"     {a:8.2f} {alone:8.1f} {pk:8.1f}  {az:7.1f} {el:+7.1f}")
+        lit = lit_ground(a, el, lam, altitude_m)
+        rows.append((az, el, a, pk, alone, lit))
+    # sort by how much return actually reaches the ground: the peak spread
+    # over the patch it lands on.  A speck at the horizon beats the belly.
+    catch = sorted((r for r in rows if np.isfinite(r[5]) and r[2] >= 0.01),
+                   key=lambda r: -(10.0 ** (r[3] / 10.0) * r[5]))
+    for az, el, a, pk, alone, lit in catch[:top]:
+        print(f"     {a:8.2f} {alone:8.1f} {pk:8.1f}  {az:7.1f} {el:+7.1f}"
+              f" {_ground(lit):>13}")
 
-    print("\nTHREAT BANDS (area whose mirror points into the band)")
-    print("     a wide band hides what matters: 40 m^2 aimed at one azimuth "
-          "70 deg down is\n     a pencil you may never fly through, the same "
-          "40 m^2 aimed at 90 deg down is\n     under you on every pass.")
+    print("\nTHREAT BANDS")
     for band in threats:
         lo, hi = band[0], band[1]
         label = band[2] if len(band) > 2 else ""
-        rows = [r for r in bun if lo <= r[1] <= hi]
-        area = sum(r[2] for r in rows)
-        loud = max((r[3] for r in rows), default=float("-inf"))
-        print(f"     el {lo:+6.1f} to {hi:+6.1f}: {area:8.2f} m^2 "
-              f"({100 * area / mesh.total_area:4.1f}% of skin), "
-              f"loudest bundle {loud:6.1f} dBsm   {label}")
+        got = [r for r in rows if lo <= r[1] <= hi and r[2] >= 0.01]
+        area = sum(r[2] for r in got)
+        worst = max(got, key=lambda r: r[3], default=None)
+        # footprints overlap, so the band's own worst offender is the honest
+        # number here, not a sum over every panel pointing into it
+        lit = _ground(worst[5]) if worst else "           -"
+        loud = f"{worst[3]:6.1f}" if worst else "     -"
+        print(f"     el {lo:+6.1f} to {hi:+6.1f}: {area:7.2f} m^2 aimed in; "
+              f"worst bundle {loud} dBsm over {lit}")
+        print(f"                          {label}")
+
+
+def _altitude(text):
+    text = text.strip().lower()
+    if text.endswith("ft"):
+        return float(text[:-2]) * 0.3048
+    return float(text[:-1] if text.endswith("m") else text)
 
 
 def _band(text):
@@ -110,6 +170,8 @@ def main(argv=None):
     ap.add_argument("--top", type=int, default=8)
     ap.add_argument("--min-length", type=float, default=0.3,
                     help="ignore edges shorter than this, in metres")
+    ap.add_argument("--altitude", default="25000ft",
+                    help="how high the aircraft is, for the lit-ground column")
     args = ap.parse_args(argv)
     for i, path in enumerate(args.meshes):
         if i:
@@ -117,7 +179,7 @@ def main(argv=None):
         print("=" * 72)
         audit(load_mesh(path), _frequency(args.freq),
               args.threat or DEFAULT_THREATS, top=args.top,
-              min_length=args.min_length)
+              min_length=args.min_length, altitude_m=_altitude(args.altitude))
     return 0
 
 

@@ -8,6 +8,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
 
+from audit import lit_ground                                         # noqa: E402
 from cant_panels import cant, census                                 # noqa: E402
 from symmetrize import clip_half, mirror, symmetrize, symmetry_error  # noqa: E402
 
@@ -284,3 +285,18 @@ def test_check_mesh_symmetry_metric():
     lop = shapes.box(4.0, 2.0, 1.0) + shapes.box(1.4, 1.4, 1.4).translated(
         [1.0, 1.7, 0.4])
     assert _symmetry(lop) < 0.95
+
+
+def test_lit_ground_shrinks_as_the_lobe_swings_down():
+    """A lobe at the horizon smears; the same lobe at the nadir lands in a disc."""
+    lam, h = 0.03, 7620.0
+    areas = [lit_ground(53.0, el, lam, h) for el in (-3.0, -10.0, -45.0, -90.0)]
+    assert areas == sorted(areas, reverse=True), "must fall monotonically"
+    assert areas[-1] < 2000.0, "the nadir disc is small"
+    assert lit_ground(53.0, 5.0, lam, h) == float("inf")   # never lands
+
+    # peak x lobe solid angle is 4 pi A however the area is cut up
+    for parts in (1, 2, 4, 10):
+        a = 25.0 / parts
+        peak = 4.0 * np.pi * a ** 2 / lam ** 2
+        assert parts * peak * (lam ** 2 / a) == pytest.approx(4.0 * np.pi * 25.0)
