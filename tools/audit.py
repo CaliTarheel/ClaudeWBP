@@ -20,6 +20,15 @@ What it reports:
 
 Elevation sign follows the solver: negative elevation is a radar BELOW the
 aircraft, so `--threat -90:-60` is the look-up case.
+
+What it does not do is integrate.  Both predictors rank scatterers one at a
+time -- this edge, that panel -- and neither adds up what a radar actually
+receives, which is every scatterer at once with its phase, its shadowing and
+its neighbours.  So a band can get worse here and better in the sweep, because
+one panel got louder while the rest got quieter.  Measured against a solve of
+an imported airframe, this tool called a band 2 dB worse that the sweep found
+3 dB better.  Where the two disagree the sweep is right; the audit's job is to
+tell you where to point it.
 """
 
 from __future__ import annotations
